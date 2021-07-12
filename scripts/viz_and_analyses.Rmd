@@ -1,0 +1,1038 @@
+---
+title: "SARS-CoV-2 - hACE2 mice - Dose-response & vaccination experiments"
+author: "Amandine Gamble"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: 
+ bookdown::html_document2:
+  code_folding: hide
+  theme: united
+  toc: yes
+  toc_float: 
+   collapsed: false
+  number_sections: true
+  fig_caption: true
+editor_options:
+ chunk_output_type: console
+---
+
+<style type = "text/css">
+ body{/* Normal */ font-size: 12px;}
+ h1.title{font-size: 22px;}
+ h1{/* Header 1 */ font-size: 18px;}
+ h2{/* Header 2 */ font-size: 16px;}
+ h3{ /* Header 2 */ font-size: 14px;}
+ code.r{/* Code block */ font-size: 10px;}
+ pre{/* Code block - determines code spacing between lines */ font-size: 10px;}
+</style>
+
+```{r setup, message = F, warning = F}
+
+if (Sys.info()[["user"]] == "Amandine"){
+  path = "D:/work/postdoc_UCLA/1_project_PREEMPT/4_students/syncytia_students_2019/4_analyses/HNV_syncytium_review_public"
+}else if (Sys.info()[["user"]] == "Aubrey"){ 
+  path = "D:/Documents/Lloyd-Smith Lab/R/HNV_syncytium_review"
+}
+
+file = "data_clean/data.csv"
+
+## Install and load packages as needed
+packages = c("ggplot2", "patchwork", "tidyr")
+
+suppressMessages(invisible(lapply(
+  packages,
+  function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  }
+)))
+#devtools::install_github("thomasp85/patchwork")
+
+ggtheme = theme_bw() +
+  theme(
+    plot.title = element_text(size = 8, hjust = 0.5), 
+    plot.margin = margin(5, 5, 5, 5),  
+    panel.grid.minor = element_blank(), 
+    panel.grid.major = element_blank(), 
+    panel.border = element_blank(), 
+    axis.title.y.right = element_text(angle = 90),
+    axis.title = element_text(size = 8), 
+    axis.text = element_text(size = 8, color = "black"), 
+    axis.line = element_line(size = 0.25, color = "black"), 
+    axis.ticks = element_line(size = 0.25, color = "black"), 
+    strip.text = element_text(size = 8), 
+    strip.background = element_blank(), 
+    legend.margin = margin(0, 0, 0, 0), 
+    legend.title = element_text(size = 8), 
+    legend.text = element_text(size = 8), 
+    legend.key = element_rect(fill = NA, color = NA), 
+    legend.key.size = unit(0.4, "cm"), 
+    legend.background = element_rect(colour = "transparent", fill = ggplot2::alpha("white", 0))
+ )
+
+ggtheme_balloon = theme_bw() +
+  theme(
+    plot.title = element_text(size = 8, hjust = 0.5), 
+    plot.margin = margin(5, 5, 5, 5),  
+    panel.grid.minor = element_line(size = 0.25), 
+    panel.grid.major = element_line(size = 0.25), 
+    panel.border = element_rect(size = 0.25), 
+    axis.title.y.right = element_text(angle = 90),
+    axis.title = element_text(size = 8), 
+    axis.text = element_text(size = 8, color = "black"), 
+    axis.line = element_line(size = 0.25, color = "black"), 
+    axis.ticks = element_line(size = 0.25, color = "black"), 
+    strip.text = element_text(size = 8), 
+    strip.background = element_blank(), 
+    legend.margin = margin(0, 0, 0, 0), 
+    legend.title = element_text(size = 8, margin = margin(t = 5, b = 5)), 
+    legend.text = element_text(size = 8), 
+    legend.key = element_rect(fill = NA, color = NA), 
+    legend.key.size = unit(0.4, "cm"), 
+    legend.background = element_rect(colour = "transparent", fill = ggplot2::alpha("white", 0))
+ )
+
+ggtheme_right = theme(axis.text.y = element_blank(),
+                    axis.title.y = element_blank())
+
+ggtheme_top = theme(axis.text.x = element_blank(),
+                  axis.title.x = element_blank())
+
+col_pos = "#084594"
+col_pos_2 = "#005a32"
+col_pos_3 = "#d94801"
+
+setwd(path)
+
+data = read.table(file, sep = ";", header = T)
+
+source("scripts/functions_data_formatting.r")
+
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+```
+
+```{r formatting}
+
+data = f_data_format(data)
+
+syncytium = subset(data, !is.na(syncytium_screen) & syncytium_screen > 0)
+
+syncytium[is.na(syncytium$syncytium_prop), "syncytium_screen"] = NA
+
+syncytium[syncytium$tissue_group == "organ/fluid/swab_mix", "tissue_group"] = "organ_mix"
+syncytium[syncytium$tissue == "organ/fluid/swab_mix", "tissue"] = "organ_mix"
+syncytium$tissue_group = droplevels(as.factor(syncytium$tissue_group))
+syncytium$virus_strain = droplevels(as.factor(syncytium$virus_strain))
+
+syncytium$label = droplevels(as.factor(syncytium$label))
+syncytium$tissue = droplevels(as.factor(syncytium$tissue))
+
+# Order such as IHC positive are on top so when duplicated are removed, it removes the negative ones 
+# Allow us to detect the tissues positive at least one
+syncytium = syncytium[order(syncytium$syncytium_n, decreasing = T), ]
+
+
+IHC = subset(data, !is.na(IHC_screen) & IHC_screen > 0)
+
+IHC[is.na(IHC$IHC_pos_prop), "IHC_screen"] = NA
+
+IHC[which(IHC$tissue_group == "organ/fluid/swab_mix"), "tissue_group"] = "organ_mix"
+IHC[which(IHC$tissue == "organ/fluid/swab_mix"), "tissue"] = "organ_mix"
+IHC$tissue_group = droplevels(as.factor(IHC$tissue_group))
+IHC$virus_strain = droplevels(as.factor(IHC$virus_strain))
+
+IHC$label = droplevels(as.factor(IHC$label))
+IHC$tissue = droplevels(as.factor(IHC$tissue))
+
+
+
+# Order such as IHC positive are on top so when duplicated are removed, it removes the negative ones 
+# Allow us to detect the tissues positive at least one
+IHC = IHC[order(IHC$IHC_n, decreasing = T), ]
+
+```
+
+# Export study list
+
+```{r study list}
+
+summary = subset(syncytium, select=c("label", "doi", "species", "inoculation_route", "inoculum_dose", "inoculum_dose_unit", "virus_strain" ))
+summary = summary[!duplicated(summary),]
+summary = summary[order(summary$label, summary$species, summary$virus),]
+
+#write.table(summary, "export/syncytium_study_list.csv", row.names = F, sep = ";", dec = ".")
+
+# 0.69 PFU = 1 TCID50
+
+summary$inoculum_dose = as.numeric(as.character(summary$inoculum_dose))
+
+# unique(summary$inoculation_route)
+
+remove(summary)
+
+# Middleton_2017_12552_id_11_organ_mix_NA should be defined instead of mix
+
+# Number of syncytia detected
+by_study = aggregate(
+  syncytium_n ~ label,
+  data = syncytium,
+  drop = F,
+  sum)
+# All the studies that report syncytium screening info actually detected syncytia at least once
+
+remove("by_study")
+
+```
+
+# Data availability
+
+```{r data availability}
+# 
+# unique(data$doi)
+# unique(data[!is.na(data$syncytium_prop_raw), "doi"])
+
+summary = subset(data, select=c("species", "virus", "syncytium_prop_raw", "doi"))
+summary = subset(summary, species != "human")
+
+summary$virus = as.character(summary$virus)
+
+summary$virus = as.factor(summary$virus)
+
+# Break down NiV-M/HeV into to rows
+summary[nrow(summary)+1, ] = summary[summary$virus == "NiV_M/HeV", ]
+summary[summary$virus == "NiV_M/HeV", "virus" ] = c("NiV_M", "HeV")
+
+summary$virus = droplevels(summary$virus)
+levels(summary$virus) = c("CedV", "HeV", "NiV-B", "NiV-M", "NiV-M mutants")
+
+levels(summary$species) = c("Human", "African green monkey", "Squirrel monkey", "Cynomolgus monkey", "Domestic pig", "Domestic dog", "Domestic cat", "Domestic ferret", "Guinea pig", "European rabbit",
+                                    "Golden hamster", "Brown rat", "House mouse", "Xenograft house mouse", "IFNAR-KO house mouse", "Horse", "Black flying fox", "Grey-headed flying fox", "Large flying fox", "Egyptian fruit bat", "Chicken")
+
+summary$syncytium_prop_raw = as.character(summary$syncytium_prop_raw)
+summary[!is.na(summary$syncytium_prop_raw), "syncytium_prop_raw"] = "data"
+summary[is.na(summary$syncytium_prop_raw), "syncytium_prop_raw"] = "no_data"
+
+summary[summary$species == "Egyptian fruit bat" & summary$virus == "NiV-B" |
+          summary$species == "Chicken" & summary$virus == "HeV" | summary$species == "European rabbit" & summary$virus == "HeV" | summary$species == "Brown rat" & summary$virus == "HeV" |
+          summary$species == "House mouse" & summary$virus == "CedV"
+        , "syncytium_prop_raw"] = "no_infection"
+
+summary[ summary$species == "House mouse" & summary$virus == "HeV"
+        , "syncytium_prop_raw"] = "no_data" # either infection was not succesful or data are not reported
+
+summary = summary[order(summary$syncytium_prop_raw),]
+summary = summary[!duplicated(summary[, c("doi", "species", "virus")]),]
+
+summary$study = 1
+
+summary_nb = aggregate(
+    study ~ species + virus + syncytium_prop_raw,
+    data = summary,
+      sum)
+
+summary_nb = pivot_wider(summary_nb, names_from = syncytium_prop_raw, values_from = study)
+summary_nb[is.na(summary_nb$no_data), "no_data"] = 0 
+summary_nb[is.na(summary_nb$data), "data"] = 0 
+summary_nb[is.na(summary_nb$no_infection), "no_infection"] = 0 
+summary_nb$total = summary_nb$no_data + summary_nb$data + summary_nb$no_infection
+summary_nb$ratio = paste0(summary_nb$data, "/", summary_nb$total)
+
+summary = summary[!duplicated(summary[, c("species", "virus")]),]
+
+ggplot(summary, aes(x=species, y=virus))+
+  geom_tile(aes(fill=syncytium_prop_raw), color="white") +
+  geom_text(data = summary_nb, aes(label=ratio), size = 2) +
+  scale_fill_manual(values = c("#1f78b4","#e3e3e3", "#b2df8a"), name = "", label = c("Experimental data available, including syncytium data","Experimental data available, not including syncytium data", "Experimental data available, suggesting absence of infection")) +
+   scale_y_discrete(limits = rev(levels(summary$virus)), labels = rev(levels(summary$virus))) +
+  ggtheme_balloon + theme(axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top") +
+  theme(plot.margin = margin(10, 15, 10, 15))
+
+ggsave(paste0("export/syncytium_", "data_general", ".pdf"),
+       width = 14, height = 10, units = "cm", dpi = 600)
+
+```
+
+# Subset syncytium data
+
+```{r data subset}
+syncytium = subset(syncytium, virus != "NiV_M_mutant" & !is.element(doi, c("10.1111/j.1751-0813.1995.tb03549.x")) & !is.element(species, c("black_flying_fox", "egyptian_fruit_bat"))) 
+```
+
+# Score
+
+```{r score}
+
+score = subset(data, is.element(doi, c("10.1177/030098589703400408", "10.1177/030098589703400407", "10.1354/vp.45-4-576", "10.1093/infdis/jiy357", "10.1093/infdis/jiy357")) & !is.na(histo_score) & !is.element(tissue, c("CNS_meninges", "brain_neuroparenchyma")))
+
+score[score$tissue == "lung_alveoli", "tissue"] = "lung"
+score$tissue = droplevels(score$tissue)
+levels(score$tissue) = c("Lung", "GI tract", "Lymph nodes", "Spleen", "Brain", "Heart", "Bladder", "Kidney", "Ovary", "Uterus")
+
+score$label_plot = as.factor(paste0(score$label, "_", score$species))
+score$label_plot = factor(score$label_plot, levels = c("Hooper_1997b_00408_cat", "Hooper_1997a_00407_horse", "Hooper_1997b_00408_guinea_pig", "Torres_Velez_2008_4-576_guinea_pig", "Escaffre_2018_iy357_hamster"))
+                            
+levels(score$label_plot) = c("Hooper et al. 1997b\nHeV - Cat", "Hooper et al. 1997a\nHeV - Horse",  "Hooper et al. 1997b\nHeV - Guinea pig", "Torres-Velez et al. 2008\nNiV-M - Guinea pig", "Escaffre et al. 2018\nNiV-M - Hamster")
+
+score_stat = aggregate(histo_score ~ tissue + label_plot, 
+                       data = score,
+                       median)
+
+ggplot(score, aes(x=tissue, y=histo_score))+
+  geom_jitter(height = 0.1, width = 0.2, 
+              size = 1, alpha = 0.5, shape = 16, color = "#8B8B8B") +
+  stat_summary(fun = median, fun.min = function(z) {quantile(z,0.25)}, fun.max = function(z) {quantile(z,0.75)},  
+               size = 0.5, shape = 18, color = col_pos) +
+  facet_grid(label_plot~.) +
+  ylab("Lesion score") +
+  ggtheme_balloon + theme(axis.title.x = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  #theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top") +
+  theme(plot.margin = margin(10, 15, 10, 15)) +
+  theme(strip.text.y = element_text(angle = 0))
+
+ggsave(paste0("export/syncytium_", "score", ".pdf"),
+       width = 14, height = 10, units = "cm", dpi = 600)
+
+min(score$time_post_infection, na.rm = T); max(score$time_post_infection, na.rm = T)
+
+```
+
+# Cell types
+
+```{r cell type}
+
+syncytium_cell = subset(syncytium, !is.na(syncytium_endothelium) | !is.na(syncytium_epithelium) | !is.na(syncytium_smooth_muscle) | !is.na(syncytium_neuron) | !is.na(syncytium_macrophage))
+
+syncytium_cell_summary = subset(syncytium_cell, select = c("species", "virus", "tissue", "syncytium_endothelium", "syncytium_epithelium", "syncytium_smooth_muscle", "syncytium_macrophage", "syncytium_neuron" ))
+
+syncytium_cell_summary = syncytium_cell_summary[!duplicated(syncytium_cell_summary),]
+
+syncytium_cell_summary = pivot_longer(syncytium_cell_summary, names_to = "cell", values_to = "syncytium", cols = starts_with("syncytium_"), values_drop_na = T)
+
+syncytium_cell_summary$cell = as.factor(syncytium_cell_summary$cell)
+levels(syncytium_cell_summary$cell) = c("Endothelial cell", "Epithelial cell", "Macrophage", "Neuron", "Smooth muscle cell")
+
+syncytium_cell_summary$species = droplevels(syncytium_cell_summary$species)
+levels(syncytium_cell_summary$species) = c("Monkey", "Pig", "Dog", "Cat", "Ferret", "Guinea pig", "Hamster", "Horse", "Chicken")
+
+syncytium_cell_summary$virus =  droplevels(syncytium_cell_summary$virus)
+levels(syncytium_cell_summary$virus) = c("HeV", "NiV-M", "NiV-B")
+
+ggplot(syncytium_cell_summary, aes(x=species, y=cell))+
+  geom_tile(aes(fill=as.factor(syncytium)), color="white") +
+  facet_grid(virus~.) +
+  scale_fill_manual(values = col_pos, name = "", label = c("Syncytium detection")) +
+  scale_y_discrete(limits = rev(levels(syncytium_cell_summary$cell)), labels = rev(levels(syncytium_cell_summary$cell))) +
+  ggtheme_balloon + theme(axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(strip.text.y = element_text(angle = 0))
+
+ggsave(paste0("export/syncytium_", "cell", ".pdf"),
+       width = 14, height = 7, units = "cm", dpi = 600)
+
+```
+
+# Plot individual studies 
+
+```{r per study with time approximate, message = F, warning = F}
+
+data_id_tissuegroup_time_approximate = syncytium[!duplicated(syncytium$sample_id_tissuegroup_time_approximate), ]
+data_id_tissuegroup_time_approximate = subset(data_id_tissuegroup_time_approximate, !is.na(time_post_infection_approximate))
+data_id_tissuegroup_time_approximate$species = droplevels(data_id_tissuegroup_time_approximate$species)
+levels(data_id_tissuegroup_time_approximate$species) = c("African green monkey", "Domestic pig", "Domestic cat", "Domestic ferret", "Guinea pig", "Golden hamster", "Xenograft house mouse", "Horse", "Chicken")
+
+viruses = c("HeV", "NiV_M", "NiV_B")
+
+for (v in 1:length(viruses)){
+  
+  df_screen = aggregate(
+    syncytium_screen ~ species + tissue_group + time_post_infection_approximate + label,
+      data = subset(data_id_tissuegroup_time_approximate, virus_strain == viruses[v]),
+      drop = FALSE,
+      sum)
+
+  df_detect = aggregate(
+    syncytium_n ~ species + tissue_group + time_post_infection_approximate + label,
+      data = subset(data_id_tissuegroup_time_approximate, virus_strain == viruses[v]),
+      drop = FALSE,
+      sum)
+
+  df_sample = aggregate(
+    group_size ~ species + tissue_group + time_post_infection_approximate + label,
+      data = subset(data_id_tissuegroup_time_approximate, virus_strain == viruses[v]),
+      drop = FALSE,
+      sum)
+
+  df_list = list(df_screen, df_detect, df_sample)
+  df = Reduce(function(x, y) merge(x, y, all = T), df_list, accumulate = F)
+
+  df$syncytium_p = df$syncytium_n / df$syncytium_screen
+  
+  by_time = df
+
+  by_time = by_time[order(by_time$species), ]
+  by_time$label_plot = substr(by_time$label, 1, nchar(as.character(by_time$label)) - 6)
+  by_time$label_plot = gsub("_", " et al. ", by_time$label_plot)
+  by_time$label_plot = paste(by_time$label_plot, by_time$species,  sep = "\n")
+
+  studies = unique(as.character(by_time$label))
+  
+  i = 1
+  
+  for (s in 1:length(studies)){
+  
+    data_study = subset(by_time, label == studies[s])
+    label_plot = unique(data_study[!is.na(data_study$group_size), "label_plot"])
+    
+    hosts = unique(as.character(data_study[!is.na(data_study$group_size), "species"]))
+    
+      for (hh in 1:length(hosts)){
+        
+        data_sub = subset(data_study, species == hosts[hh])
+   
+         if (length(label_plot) > 0 ){
+      
+      plot = 
+        ggplot() +
+        geom_point(data = subset(data_sub, !is.na(group_size)), 
+                   aes(x = time_post_infection_approximate, y = tissue_group, 
+                             size = syncytium_screen, fill = syncytium_p),
+                   shape = 21, color = "black", stroke = 0.2) + 
+        geom_point(data = subset(data_sub, is.na(syncytium_p) & !is.na(group_size)), 
+                   aes(x = time_post_infection_approximate, y = tissue_group),
+                   size = 2, fill = col_pos,
+                   shape = 22, color = "black", stroke = 0.2) + 
+        geom_point(data = subset(data_sub, syncytium_p == 0), 
+             aes(x = time_post_infection_approximate, y = tissue_group, 
+                 size = syncytium_screen),
+             shape = 13, color = "black", stroke = 0.1, show.legend = FALSE, fill = "white") + 
+        scale_x_continuous(breaks = seq(2, 32, 4), limits = c(2, 32), name = "Day post-infection") +
+        scale_y_discrete(limits = rev(levels(droplevels(data_sub$tissue_group))), 
+                          labels = rev(c("Respiratory tract", "Nasal cavity", "Digestive system", "Lymphatic system", 
+                                "Nervous system", "Cardiovascular system", "Urinary tract", "Reproductive system", 
+                                "Other", "Non-specified"))) +
+        scale_fill_distiller(palette="Blues", direction=1, name = "Syncytium prevalence", breaks = seq(0, 1, 0.5), limits = c(0, 1)) +
+        scale_size_continuous(name = "Sample size", breaks = seq(1, 5, 2), limits = c(0, 15)) +
+        ggtitle(label_plot) +
+        ggtheme_balloon + theme(axis.title.y = element_blank()) +
+        guides(fill = guide_colourbar(barheight = 3.5)) +
+        coord_fixed(ratio = 2)
+      
+      assign(paste("plot", 
+                   viruses[v], 
+                   paste0(substr(hosts[hh], 1, 1), substr(hosts[hh], nchar(hosts[hh]) - 2, nchar(hosts[hh]))), 
+                  substr(studies[s], 1, nchar(studies[s]) - 6), 
+                  sep = "_"), plot)
+      
+      i = i+1
+      
+    }
+             
+      }
+  
+     }
+  
+}
+
+remove("df_screen", "df_detect", "df_sample", "df_list", "df")
+remove("by_time", "data_sub", "viruses", "studies", "v", "s" )
+
+(plot_HeV_Akey_Rockx_2010 + ggtheme_top) + (plot_HeV_Dpig_Li_2010 + ggtheme_right + ggtheme_top) +
+(plot_HeV_Dcat_Hooper_1997b) + (plot_HeV_Hrse_Hooper_1997a + ggtheme_right) +
+  plot_layout(ncol = 2, guides = 'collect') &
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top")
+
+ggsave(paste0("export/syncytium_", "per_study_HeV_1", ".pdf"),
+       width = 15.5, height = 15, units = "cm", dpi = 600)
+
+(plot_HeV_Gpig_Hooper_1997b + ggtheme_top) + (plot_HeV_Gpig_Williamson_2000 + ggtheme_right + ggtheme_top) +
+  (plot_HeV_Gpig_Williamson_2001) + (plot_HeV_Gter_Guillaume_2009 + ggtheme_right) + 
+  plot_layout(ncol = 2, guides = 'collect') &
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top")
+
+ggsave(paste0("export/syncytium_", "per_study_HeV_2", ".pdf"),
+       width = 15.5, height = 15, units = "cm", dpi = 600)
+
+(plot_NiV_B_Akey_Mire_2015 + ggtheme_top) + (plot_NiV_B_Akey_Geisbert_2019 + ggtheme_right + ggtheme_top) +
+(plot_NiV_B_Akey_Mire_2019 + ggtheme_top) + (plot_NiV_B_Akey_Prasad_2019 + ggtheme_right) +
+ (plot_NiV_B_Gter_Baseler_2014) + guide_area() +
+  plot_layout(ncol = 2, guides = 'collect') &
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top")
+
+ggsave(paste0("export/syncytium_", "per_study_NiVB", ".pdf"),
+       width = 15.5, height = 15, units = "cm", dpi = 600)
+
+(plot_NiV_M_Akey_Geisbert_2010 + ggtheme_top) + (plot_NiV_M_Akey_Yoneda_2013 + ggtheme_right + ggtheme_top) + 
+  (plot_NiV_M_Akey_Geisbert_2014 + ggtheme_top) + (plot_NiV_M_Akey_Johnston_2015 + ggtheme_right + ggtheme_top) +
+  (plot_NiV_M_Akey_Cong_2017) + (plot_NiV_M_Akey_Hammoud_2018 + ggtheme_right) +  
+  plot_layout(ncol = 2, guides = 'collect') &
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top")
+
+ggsave(paste0("export/syncytium_", "per_study_NiVM_1", ".pdf"),
+       width = 15.5, height = 20, units = "cm", dpi = 600)
+
+(plot_NiV_M_Dret_Pallister_2009 + ggtheme_top) + (plot_NiV_M_Dret_Mire_2013 + ggtheme_right + ggtheme_top) + 
+  (plot_NiV_M_Dret_Satterfield_2015 + ggtheme_top) + (plot_NiV_M_Dret_Satterfield_2016 + ggtheme_right + ggtheme_top) +
+  (plot_NiV_M_Gter_Munster_2012) + (plot_NiV_M_Gter_Baseler_2014 + ggtheme_right) +  
+  plot_layout(ncol = 2, guides = 'collect') &
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top")
+
+ggsave(paste0("export/syncytium_", "per_study_NiVM_2", ".pdf"),
+       width = 15.5, height = 20, units = "cm", dpi = 600)
+
+(plot_NiV_M_Gpig_Middleton_2007 + ggtheme_top) + (plot_NiV_M_Gpig_Torres_Velez_2008 + ggtheme_right + ggtheme_top) + 
+  (plot_NiV_M_Xuse_Valbuena_2014 + ggtheme_top) + (plot_NiV_M_Dpig_Weingartl_2005 + ggtheme_right + ggtheme_top) +
+  (plot_NiV_M_Dcat_Mungall_2007) + (plot_NiV_M_Cken_Tanimura_2006 + ggtheme_right) +  
+  plot_layout(ncol = 2, guides = 'collect') &
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top")
+
+ggsave(paste0("export/syncytium_", "per_study_NiVM_3",  ".pdf"),
+       width = 15.5, height = 20, units = "cm", dpi = 600)
+
+rm(list=ls(pattern="plot"))
+
+```
+
+# Pattern per species
+
+```{r general species x tissue group pattern}
+# Work on a unique tissue_group / individual or group
+
+data_id_tissuegroup = syncytium[which(!duplicated(syncytium$sample_id_tissuegroup)), ]
+
+df_screen = aggregate(
+  syncytium_screen ~ species + tissue_group + virus,
+  data = data_id_tissuegroup,
+  sum)
+
+df_detect = aggregate(
+  syncytium_n ~ species + tissue_group +  virus,
+  data = data_id_tissuegroup,
+  sum)
+
+df_sample = aggregate(
+  group_size ~ species + tissue_group + virus,
+  data = data_id_tissuegroup,
+  sum)
+
+df_list = list(df_screen, df_detect, df_sample)
+df = Reduce(function(x, y) merge(x, y, all = T), df_list, accumulate = F)
+
+df$syncytium_p = df$syncytium_n / df$syncytium_screen
+
+df$virus = droplevels(df$virus)
+levels(df$virus) = c("HeV", "NiV-M", "NiV-B")
+
+df$species = droplevels(df$species)
+
+levels(df$species) = c("Monkey", "Pig", "Dog", "Cat", "Ferret", "Guinea pig", "Hamster", "Xenograft mouse", "Horse", "Chicken")
+
+by_tissue = df
+
+remove("df_screen", "df_detect", "df_sample", "df_list", "df")
+
+p1 = ggplot() +
+  geom_point(data = subset(by_tissue, !is.na(syncytium_p) & virus == "HeV"), 
+             aes(x = species, y = tissue_group, size = syncytium_screen, fill = syncytium_p), 
+             shape = 21, color = "black", stroke = 0.2) + 
+  geom_point(data = subset(by_tissue, is.na(syncytium_p) & virus == "HeV"), 
+             aes(x = species, y = tissue_group), 
+             size = 2, fill = col_pos,
+             shape = 22, color = "black", stroke = 0.2) +
+  geom_point(data = subset(by_tissue, syncytium_p == 0  & virus == "HeV"), 
+             aes(x = species, y = tissue_group, size = syncytium_screen), 
+             shape = 13, color = "black", stroke = 0.1, show.legend = FALSE, fill = "white") + 
+  facet_grid(.~virus, scales = "free_x", space = "free_x") +
+  scale_x_discrete(limits = levels(by_tissue$species)) +
+  scale_y_discrete(limits = rev(levels(droplevels(by_tissue$tissue_group))), 
+                   labels = rev(c("Respiratory tract", "Nasal cavity", "Digestive system", "Lymphatic system", 
+                                  "Nervous system", "Cardiovascular system", "Urinary tract", "Reproductive system", 
+                                  "Other", "Non-specified"))) +
+  scale_fill_distiller(palette="Blues", direction=1, name = "Syncytium prevalence", breaks = seq(0, 1, 0.5), limits = c(0, 1)) +
+  scale_size_continuous(name = "Sample size", breaks = seq(0, 25, 7), limits = c(1, 40)) +
+  ggtheme_balloon + theme(axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top") +
+  guides(fill = guide_colourbar(barheight = 2.7))
+
+p2 = ggplot() +
+  geom_point(data = subset(by_tissue, !is.na(syncytium_p) & virus == "NiV-M"), 
+             aes(x = species, y = tissue_group, size = syncytium_screen, fill = syncytium_p), 
+             shape = 21, color = "black", stroke = 0.2) + 
+  geom_point(data = subset(by_tissue, is.na(syncytium_p) & virus == "NiV-M"), 
+             aes(x = species, y = tissue_group), 
+             size = 2, fill = col_pos,
+             shape = 22, color = "black", stroke = 0.2) +
+  geom_point(data = subset(by_tissue, syncytium_p == 0  & virus == "NiV-M"), 
+             aes(x = species, y = tissue_group, size = syncytium_screen, fill = syncytium_p), 
+             shape = 13, color = "black", stroke = 0.1, show.legend = FALSE) + 
+  facet_grid(.~virus, scales = "free_x", space = "free_x") +
+  facet_grid(.~virus, scales = "free_x", space = "free_x") +
+  scale_x_discrete(limits = levels(by_tissue$species)) +
+  scale_y_discrete(limits = rev(levels(droplevels(by_tissue$tissue_group))), 
+                   labels = rev(c("Respiratory tract", "Nasal cavity", "Digestive system", "Lymphatic system", 
+                                  "Nervous system", "Cardiovascular system", "Urinary tract", "Reproductive system", 
+                                  "Other", "Non-specified"))) +
+  scale_fill_distiller(palette="Blues", direction=1, name = "Syncytium prevalence", breaks = seq(0, 1, 0.5), limits = c(0, 1)) +
+  scale_size_continuous(name = "Sample size", breaks = seq(0, 25, 7), limits = c(1, 40)) +
+  ggtheme_balloon + theme(axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top") +
+  guides(fill = guide_colourbar(barheight = 2.7))
+
+p3 = ggplot() +
+  geom_point(data = subset(by_tissue, !is.na(syncytium_p) & virus == "NiV-B"), 
+             aes(x = species, y = tissue_group, size = syncytium_screen, fill = syncytium_p), 
+             shape = 21, color = "black", stroke = 0.2) + 
+  geom_point(data = subset(by_tissue, is.na(syncytium_p) & virus == "NiV-B"), 
+             aes(x = species, y = tissue_group), 
+             size = 2, fill = col_pos,
+             shape = 22, color = "black", stroke = 0.2) +
+  geom_point(data = subset(by_tissue, syncytium_p == 0  & virus == "NiV-B"), 
+             aes(x = species, y = tissue_group, size = syncytium_screen, fill = syncytium_p), 
+             shape = 13, color = "black", stroke = 0.1, show.legend = FALSE) + 
+  facet_grid(.~virus, scales = "free_x", space = "free_x") +
+  facet_grid(.~virus, scales = "free_x", space = "free_x") +
+  scale_x_discrete(limits = levels(by_tissue$species)) +
+  scale_y_discrete(limits = rev(levels(droplevels(by_tissue$tissue_group))), 
+                   labels = rev(c("Respiratory tract", "Nasal cavity", "Digestive system", "Lymphatic system", 
+                                  "Nervous system", "Cardiovascular system", "Urinary tract", "Reproductive system", 
+                                  "Other", "Non-specified"))) +
+  scale_fill_distiller(palette="Blues", direction=1, name = "Syncytium prevalence", breaks = seq(0, 1, 0.5), limits = c(0, 1)) +
+  scale_size_continuous(name = "Sample size", breaks = seq(0, 25, 7), limits = c(1, 40)) +
+  ggtheme_balloon + theme(axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top") +
+  guides(fill = guide_colourbar(barheight = 2.7))
+
+(p1 + ggtheme_top) + guide_area() + 
+  p2 + (p3 + ggtheme_right) +
+  plot_layout(ncol = 2, guides = 'collect') &
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top")
+
+ggsave(paste0("export/syncytium_", "pattern_species", ".pdf"),
+       width = 14, height = 12, units = "cm", dpi = 600)
+
+remove(by_tissue)
+
+```
+
+# Patterns per tissue
+
+```{r detailed per tissue, message = F, warning = F}
+
+data_id_tissue = syncytium[!duplicated(syncytium$sample_id_tissue), ]
+
+  df_screen = aggregate(
+    syncytium_screen ~ species + tissue_group + tissue + virus,
+      data = data_id_tissue,
+      sum)
+
+  df_detect = aggregate(
+    syncytium_n ~ species + tissue_group + tissue + virus,
+      data = data_id_tissue,
+      sum)
+
+  df_sample = aggregate(
+    group_size ~ species + tissue_group + tissue + virus,
+      data = data_id_tissue,
+      sum)
+
+  df_list = list(df_screen, df_detect, df_sample)
+  df = Reduce(function(x, y) merge(x, y, all = T), df_list, accumulate = F)
+
+  df$syncytium_p = df$syncytium_n / df$syncytium_screen
+  
+  df=subset(df, virus !="NiV_M_mutant" & virus !="CeV" & virus !="NiV_M/HeV")
+  df$virus = droplevels(df$virus)
+  
+levels(df$virus) = c("HeV", "NiV-M", "NiV-B")
+
+
+df = subset(df, !is.element(species, c("rabbit", "rat", "egyptian_fruit_bat", "black_flying_fox", "house_mouse")))
+
+  by_tissue = df
+  
+  remove("df_screen", "df_detect", "df_sample", "df_list", "df")
+
+  by_tissue$tissue_group = droplevels(by_tissue$tissue_group)
+levels(by_tissue$tissue_group) = c("Respiratory\ntract", "Nasal\ncavity", "Digestive\nsystem", "Lymphatic\nsystem", "Nervous\nsystem", "Cardiovascular", "Urinary\ntract", "Reproductive\nsystem", "Other", "")
+
+levels(by_tissue$tissue) = c("Bronchiole", "Lung", "Alveoli", "Apical lobe", "Diaphragmatic lobe", "Lung (macro. lesion)", "Lung (no macro. lesion)", "Trachea", 
+                             "Olfactory epithelium", "Respiratory epithelium", "Submucosal gland", "Mucosa", "Turbinates",
+                             "Colon", "Duodenum", "Esophagus", "GI tract", "Ileocecal junction", "Ileum", "Liver", "Pancreas", "Stomach", 
+                             "Bone marrow", "Lymph node (LN)", "Axillary LN", "Bronchial LN", "Inguinal LN", "Mediastinal LN", "Mesenteric LN", "Retropharyngeal LN", "Submandibular LN", "Spleen", "Thymus", "Tonsil", 
+                             "Brain", "Cerebellum", "Frontal cerebrum", "Occipital cerebrum", "Hipocampus",  "Neuroparenchyma", "Olfactory lobe", "Brain stem", "Meninges", "Forebrain","Ganglion", "Medulla",  "Pituitary gland", "Spinal cord", 
+                             "Heart", 
+                             "Bladder", "Kidney", "Kidney glomeruli", 
+                             "Gonad", "Myometrium", "Ovary", "Prostate", "Sexual organ", "Testis", "Uterus", "Uterus or placenta", "Uterus or prostate",  "Adrenal gland", "Conjunctiva", "Skeletal muscle", "Salivary gland", "Haired skin", "Thyroid gland", "Tongue", "Non-specified")
+
+by_tissue$tissue = ordered(by_tissue$tissue, levels = rev(c(
+  "Trachea", "Lung", "Apical lobe", "Diaphragmatic lobe", "Lung (macro. lesion)", "Lung (no macro. lesion)", "Bronchiole", "Alveoli", 
+  "Mucosa", "Turbinates", "Respiratory epithelium", "Olfactory epithelium", "Submucosal gland",  
+  "Digestive tract", "Esophagus", "Stomach",  "Duodenum", "Ileum", "Ileocecal junction", "Colon", "Liver", "Pancreas", 
+  "Spleen", "Bone marrow", "Thymus", "Tonsil", "Lymph node (LN)", "Bronchial LN", "Mediastinal LN","Axillary LN", "Retropharyngeal LN",  "Submandibular LN",  "Mesenteric LN", "Inguinal LN", 
+  "Brain",  "Forebrain", "Frontal cerebrum", "Occipital cerebrum", "Olfactory lobe", "Hipocampus", "Pituitary gland", "Cerebellum", "Brain stem", "Medulla", "Spinal cord", "Ganglion", "Meninges", "Neuroparenchyma", "Ependyma", 
+  "Heart", 
+  "Kidney", "Kidney glomeruli", "Bladder", 
+  "Sexual organ", "Gonad", "Ovary", "Testis", "Uterus", "Uterus or placenta", "Uterus or prostate", "Myometrium",  "Prostate",   
+  "Haired skin", "Conjunctiva", "Tongue",  "Salivary gland", "Adrenal gland",  "Thyroid gland", "Skeletal muscle",
+  "Non-specified")))
+  
+by_tissue$species = droplevels(by_tissue$species)
+levels(by_tissue$species) = c("Monkey", "Pig", "Dog", "Cat", "Ferret", "Guinea pig", "Hamster", "Xenograft mouse", "Horse", "Chicken")
+
+ggplot() +
+  geom_point(data = subset(by_tissue, !is.na(syncytium_p) & is.element(tissue_group, c("Respiratory\ntract", "Nasal\ncavity", "Digestive\nsystem", "Lymphatic\nsystem"))), 
+             aes(x = species, y = tissue, size = syncytium_screen, fill = syncytium_p), 
+             shape = 21, color = "black", stroke = 0.2) + 
+  geom_point(data = subset(by_tissue, is.na(syncytium_p) & is.element(tissue_group, c("Respiratory\ntract", "Nasal\ncavity", "Digestive\nsystem", "Lymphatic\nsystem"))), 
+             aes(x = species, y = tissue), 
+             size = 2, fill = col_pos,
+             shape = 22, color = "black", stroke = 0.2) +
+  geom_point(data = subset(by_tissue, syncytium_p == 0  & is.element(tissue_group, c("Respiratory\ntract", "Nasal\ncavity", "Digestive\nsystem", "Lymphatic\nsystem"))), 
+             aes(x = species, y = tissue, size = syncytium_screen), 
+             shape = 13, color = "black", stroke = 0.1, show.legend = FALSE, fill = "white") + 
+  facet_grid(tissue_group~virus, scales = "free_y", space = "free_y") +
+  scale_x_discrete(limits = levels(by_tissue$species)) +
+    #scale_y_discrete(limits = rev(levels(droplevels(by_tissue$tissue)))) +
+  scale_fill_distiller(palette="Blues", direction=1, name = "Syncytium prevalence", breaks = seq(0, 1, 0.5), limits = c(0, 1)) +
+  scale_size_continuous(name = "Sample size", breaks = seq(0, 30, 10), limits = c(1, 40)) +
+  ggtheme_balloon + theme(axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top") +
+  theme(strip.text.y = element_text(angle = 0)) + #theme(strip.text.y = element_blank()) +
+  guides(fill = guide_colourbar(barheight = 2.7))
+
+ggsave(paste0("export/syncytium_", "tissues_1", ".pdf"),
+       width = 15.5, height = 17, units = "cm", dpi = 600)
+
+ggplot() +
+  geom_point(data = subset(by_tissue, !is.na(syncytium_p) & is.element(tissue_group, c("Nervous\nsystem", "Cardiovascular", "Urinary\ntract", "Reproductive\nsystem", "Other", ""))), 
+             aes(x = species, y = tissue, size = syncytium_screen, fill = syncytium_p), 
+             shape = 21, color = "black", stroke = 0.2) + 
+  geom_point(data = subset(by_tissue, is.na(syncytium_p) & is.element(tissue_group, c("Nervous\nsystem", "Cardiovascular", "Urinary\ntract", "Reproductive\nsystem", "Other", ""))), 
+             aes(x = species, y = tissue), 
+             size = 2, fill = col_pos,
+             shape = 22, color = "black", stroke = 0.2) +
+  geom_point(data = subset(by_tissue, syncytium_p == 0  & is.element(tissue_group, c("Nervous\nsystem", "Cardiovascular", "Urinary\ntract", "Reproductive\nsystem", "Other", ""))), 
+             aes(x = species, y = tissue, size = syncytium_screen), 
+             shape = 13, color = "black", stroke = 0.1, show.legend = FALSE, fill = "white") + 
+  facet_grid(tissue_group~virus, scales = "free_y", space = "free_y") +
+  scale_x_discrete(limits = levels(by_tissue$species)) +
+    #scale_y_discrete(limits = rev(levels(droplevels(by_tissue$tissue)))) +
+  scale_fill_distiller(palette="Blues", direction=1, name = "Syncytium prevalence", breaks = seq(0, 1, 0.5), limits = c(0, 1)) +
+  scale_size_continuous(name = "Sample size", breaks = seq(0, 30, 10), limits = c(1, 40)) +
+  ggtheme_balloon + theme(axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top") +
+  theme(strip.text.y = element_text(angle = 0)) + #theme(strip.text.y = element_blank()) +
+  guides(fill = guide_colourbar(barheight = 2.7))
+
+ggsave(paste0("export/syncytium_", "tissues_2",  ".pdf"),
+       width = 15.5, height = 17, units = "cm", dpi = 600)
+
+remove(by_tissue)
+
+```
+
+# IHC
+
+```{r IHC}
+# Work on a unique tissue_group / individual or group
+
+data_id_tissuegroup = IHC[which(!duplicated(IHC$sample_id_tissuegroup)), ]
+
+df_screen = aggregate(
+  IHC_screen ~ species + tissue_group + virus,
+  data = data_id_tissuegroup,
+  sum)
+
+df_detect = aggregate(
+  IHC_n ~ species + tissue_group +  virus,
+  data = data_id_tissuegroup,
+  sum)
+
+df_sample = aggregate(
+  group_size ~ species + tissue_group + virus,
+  data = data_id_tissuegroup,
+  sum)
+
+df_list = list(df_screen, df_detect, df_sample)
+df = Reduce(function(x, y) merge(x, y, all = T), df_list, accumulate = F)
+
+df$IHC_p = df$IHC_n / df$IHC_screen
+
+
+
+df=subset(df, virus != "NiV_M_mutant" & species != "human" & species != "egyptian_fruit_bat")
+df$virus = droplevels(df$virus)
+
+levels(df$virus) = c("HeV", "NiV-M", "NiV-B")
+
+df$species = droplevels(df$species)
+
+levels(df$species) = c("African green monkey", "Squirrel monkey", "Pig", "Cat", "Ferret", "Guinea pig", "Hamster", "Mouse", "Xenograft mouse", "IFNAR-KO mouse", "Horse", "Grey-headed flying fox", "Chicken")
+
+by_tissue = df
+
+remove("df_screen", "df_detect", "df_sample", "df_list", "df")
+
+p1 = ggplot() +
+  geom_point(data = subset(by_tissue, !is.na(IHC_p) & virus == "HeV"), 
+             aes(x = species, y = tissue_group, size = IHC_screen, fill = IHC_p), 
+             shape = 21, color = "black", stroke = 0.2) + 
+  geom_point(data = subset(by_tissue, is.na(IHC_p) & virus == "HeV"), 
+             aes(x = species, y = tissue_group), 
+             size = 2, fill = col_pos_3,
+             shape = 22, color = "black", stroke = 0.2) + 
+  geom_point(data = subset(by_tissue, !is.na(IHC_p) & IHC_p == 0 & virus == "HeV"), 
+             aes(x = species, y = tissue_group, size = IHC_screen, fill = IHC_p), 
+             shape = 13, color = "black", stroke = 0.1, show.legend = FALSE) +
+  facet_grid(.~virus, scales = "free_x", space = "free_x") +
+  scale_x_discrete(limits = levels(by_tissue$species)) +
+  scale_y_discrete(limits = rev(levels(droplevels(by_tissue$tissue_group))), 
+                   labels = rev(c("Respiratory tract", "Nasal cavity", "Digestive system", "Lymphatic system", 
+                                  "Nervous system", "Cardiovascular system", "Urinary tract", "Reproductive system", 
+                                  "Other", "Non-specified"))) +
+  scale_fill_distiller(palette="Oranges", direction=1, name = "IHC prevalence", breaks = seq(0, 1, 0.5), limits = c(0, 1)) +
+  scale_size_continuous(name = "Sample size", breaks = seq(0, 80, 20), limits = c(1, 80)) +
+  ggtheme_balloon + theme(axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top") +
+  guides(fill = guide_colourbar(barheight = 2.7))
+
+p2 = ggplot() +
+  geom_point(data = subset(by_tissue, !is.na(IHC_p) & virus == "NiV-M"), 
+             aes(x = species, y = tissue_group, size = IHC_screen, fill = IHC_p), 
+             shape = 21, color = "black", stroke = 0.2) + 
+  geom_point(data = subset(by_tissue, is.na(IHC_p) & virus == "NiV-M"), 
+             aes(x = species, y = tissue_group), 
+             size = 2, fill = col_pos_3,
+             shape = 22, color = "black", stroke = 0.2) +
+  geom_point(data = subset(by_tissue, !is.na(IHC_p) & IHC_p == 0 & virus == "NiV-M"), 
+             aes(x = species, y = tissue_group, size = IHC_screen, fill = IHC_p), 
+             shape = 13, color = "black", stroke = 0.1, show.legend = FALSE) +
+  facet_grid(.~virus, scales = "free_x", space = "free_x") +
+  scale_x_discrete(limits = levels(by_tissue$species)) +
+  scale_y_discrete(limits = rev(levels(droplevels(by_tissue$tissue_group))), 
+                   labels = rev(c("Respiratory tract", "Nasal cavity", "Digestive system", "Lymphatic system", 
+                                  "Nervous system", "Cardiovascular system", "Urinary tract", "Reproductive system", 
+                                  "Other", "Non-specified"))) +
+  scale_fill_distiller(palette="Oranges", direction=1, name = "IHC prevalence", breaks = seq(0, 1, 0.5), limits = c(0, 1)) +
+  scale_size_continuous(name = "Sample size", breaks = seq(0, 80, 20), limits = c(1, 80)) +
+  ggtheme_balloon + theme(axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top") +
+  guides(fill = guide_colourbar(barheight = 2.7))
+
+p3 = ggplot() +
+  geom_point(data = subset(by_tissue, !is.na(IHC_p) & virus == "NiV-B"), 
+             aes(x = species, y = tissue_group, size = IHC_screen, fill = IHC_p), 
+             shape = 21, color = "black", stroke = 0.2) + 
+  geom_point(data = subset(by_tissue, is.na(IHC_p) & virus == "NiV-B"), 
+             aes(x = species, y = tissue_group), 
+             size = 2, fill = col_pos_3,
+             shape = 22, color = "black", stroke = 0.2) +
+  geom_point(data = subset(by_tissue, !is.na(IHC_p) & IHC_p == 0 &virus == "NiV-B"), 
+             aes(x = species, y = tissue_group, size = IHC_screen, fill = IHC_p), 
+             shape = 13, color = "black", stroke = 0.1, show.legend = FALSE) +
+  facet_grid(.~virus, scales = "free_x", space = "free_x") +
+  scale_x_discrete(limits = levels(by_tissue$species)) +
+  scale_y_discrete(limits = rev(levels(droplevels(by_tissue$tissue_group))), 
+                   labels = rev(c("Respiratory tract", "Nasal cavity", "Digestive system", "Lymphatic system", 
+                                  "Nervous system", "Cardiovascular system", "Urinary tract", "Reproductive system", 
+                                  "Other", "Non-specified"))) +
+  scale_fill_distiller(palette="Oranges", direction=1, name = "IHC prevalence", breaks = seq(0, 1, 0.5), limits = c(0, 1)) +
+  scale_size_continuous(name = "Sample size", breaks = seq(0, 80, 20), limits = c(1, 80)) +
+  ggtheme_balloon + theme(axis.title = element_blank(), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top") +
+  guides(fill = guide_colourbar(barheight = 2.7))
+
+(p1 + ggtheme_top) + guide_area() + 
+  p2 + (p3 + ggtheme_right) +
+  plot_layout(ncol = 2, guides = 'collect') &
+  theme(legend.position = "bottom", legend.direction="vertical", legend.box="horizontal", legend.box.just = "top")
+
+ggsave(paste0("export/syncytium_", "ICH_pattern_species",  ".pdf"),
+       width = 15.5, height = 15, units = "cm", dpi = 600)
+
+remove(by_tissue)
+
+```
+
+# IHC vs syncytium
+
+```{r IHC vs syncytia}
+
+
+#################
+
+# Explore what IHC data look like
+# unique(syncytium$IHC_pos_prop)
+
+# Keep only numerical values
+syncytium$IHC_pos_prop_original = syncytium$IHC_pos_prop
+syncytium$IHC_pos_prop = as.numeric(syncytium$IHC_pos_prop)
+
+# Count
+sum(!is.na(syncytium$IHC_pos_prop))
+
+# Proportions through time
+
+by_time_screened_virus = aggregate(
+  syncytium_screen ~ species + tissue_group + time_post_infection + virus + label,
+  data = subset(syncytium, !is.element(tissue_group, c("other", "unknown/mix"))),
+  sum)
+
+by_time_detect_virus = aggregate(
+  syncytium_n ~ species + tissue_group + time_post_infection + virus + label,
+  data = subset(syncytium, !is.element(tissue_group, c("other", "unknown/mix"))),
+  sum)
+
+by_time_virus = merge(by_time_screened_virus, by_time_detect_virus, by=c("species","tissue_group","time_post_infection","virus", "label"))
+by_time_virus$syncytium_p = by_time_virus$syncytium_n / by_time_virus$syncytium_screen
+
+syncytium$IHC_n = as.numeric(as.character(syncytium$IHC_pos_prop)) * syncytium$group_size
+
+IHC_pos_time_virus = aggregate(
+  IHC_n ~ species + tissue_group + time_post_infection + virus + label,
+  data = subset(syncytium, !is.element(tissue_group, c("other", "unknown/mix"))),
+  sum)
+
+by_time_virus = merge(by_time_virus, IHC_pos_time_virus, by=c("species","tissue_group","time_post_infection","virus", "label"))
+by_time_virus$IHC_p = by_time_virus$IHC_n / by_time_virus$syncytium_screen
+
+ggplot(subset(by_time_virus, virus =="NiV_M" & is.element(tissue_group, c("lymphatic system", "other major organ", "respiratory tract"))))+
+  geom_point(aes(x=time_post_infection, y = syncytium_p, color = "Syncytium proprtion"), size = 2)+
+  geom_line(aes(x=time_post_infection, y = syncytium_p, color = "Syncytium proprtion"))+
+  geom_point(aes(x=time_post_infection, y = IHC_p, color = "IHC-pos proprtion"))+
+  geom_line(aes(x=time_post_infection, y = IHC_p, color = "IHC-pos proprtion"))+
+  facet_grid(label~tissue_group)+ ylab("proportion")+
+  theme_bw()+theme(strip.text.y = element_text(angle = 0))
+
+ggplot(subset(by_time_virus, virus =="NiV_M"))+
+  geom_point(aes(x=time_post_infection, y = syncytium_p, color = "Syncytium proprtion"), size = 2)+
+  geom_line(aes(x=time_post_infection, y = syncytium_p, color = "Syncytium proprtion"))+
+  geom_point(aes(x=time_post_infection, y = IHC_p, color = "IHC-pos proprtion"))+
+  geom_line(aes(x=time_post_infection, y = IHC_p, color = "IHC-pos proprtion"))+
+  facet_grid(label~tissue_group)+ ylab("proportion")+
+  theme_bw()+theme(strip.text.y = element_text(angle = 0))
+
+ggplot(subset(by_time_virus, virus =="NiV_B" & is.element(tissue_group, c("lymphatic system", "other major organ", "respiratory tract"))))+
+  geom_point(aes(x=time_post_infection, y = syncytium_p, color = "Syncytium proprtion"), size = 2)+
+  geom_line(aes(x=time_post_infection, y = syncytium_p, color = "Syncytium proprtion"))+
+  geom_point(aes(x=time_post_infection, y = IHC_p, color = "IHC-pos proprtion"))+
+  geom_line(aes(x=time_post_infection, y = IHC_p, color = "IHC-pos proprtion"))+
+  facet_grid(label~tissue_group)+ ylab("proportion")+
+  theme_bw()+theme(strip.text.y = element_text(angle = 0))
+
+ggplot(subset(by_time_virus, virus =="NiV_B"))+
+  geom_point(aes(x=time_post_infection, y = syncytium_p, color = "Syncytium proprtion"), size = 2)+
+  geom_line(aes(x=time_post_infection, y = syncytium_p, color = "Syncytium proprtion"))+
+  geom_point(aes(x=time_post_infection, y = IHC_p, color = "IHC-pos proprtion"))+
+  geom_line(aes(x=time_post_infection, y = IHC_p, color = "IHC-pos proprtion"))+
+  facet_grid(label~tissue_group)+ ylab("proportion")+
+  theme_bw()+theme(strip.text.y = element_text(angle = 0))
+
+ggplot(subset(by_time_virus, virus =="HeV" & is.element(tissue_group, c("lymphatic system", "other major organ", "respiratory tract"))))+
+  geom_point(aes(x=time_post_infection, y = syncytium_p, color = "Syncytium proprtion"), size = 2)+
+  geom_line(aes(x=time_post_infection, y = syncytium_p, color = "Syncytium proprtion"))+
+  geom_point(aes(x=time_post_infection, y = IHC_p, color = "IHC-pos proprtion"))+
+  geom_line(aes(x=time_post_infection, y = IHC_p, color = "IHC-pos proprtion"))+
+  facet_grid(label~tissue_group)+ ylab("proportion")+
+  theme_bw()+theme(strip.text.y = element_text(angle = 0))
+
+ggplot(subset(by_time_virus, virus =="HeV"))+
+  geom_point(aes(x=time_post_infection, y = syncytium_p, color = "Syncytium proprtion"), size = 2)+
+  geom_line(aes(x=time_post_infection, y = syncytium_p, color = "Syncytium proprtion"))+
+  geom_point(aes(x=time_post_infection, y = IHC_p, color = "IHC-pos proprtion"))+
+  geom_line(aes(x=time_post_infection, y = IHC_p, color = "IHC-pos proprtion"))+
+  facet_grid(label~tissue_group)+ ylab("proportion")+
+  theme_bw()+theme(strip.text.y = element_text(angle = 0))
+
+by_time_virus$species = droplevels(by_time_virus$species)
+levels(by_time_virus$species) = c("Monkey", "Pig", "Cat", "Ferret", "Guinea pig", "Hamster")
+
+by_time_virus$virus=droplevels(by_time_virus$virus)
+levels(by_time_virus$virus) = c("HeV", "NiV-M", "NiV-B")
+
+by_time_virus$tissue_group=droplevels(by_time_virus$tissue_group)
+levels(by_time_virus$tissue_group) = c("Respiratory\ntract", "Nasal\ncavity", "Digestive\nsystem", "Lymphatic\nsystem", "Nervous\nsystem", "Cardiovascular\nsystem", "Urinay\ntract", "Reproductive\nsystem", "Unspecified")
+
+by_time_virus$label = substr(by_time_virus$label, 1, nchar(as.character(by_time_virus$label)) - 6)
+
+by_time_virus$label_plot=as.factor(paste0(by_time_virus$label, "\n", by_time_virus$virus, " - ", by_time_virus$species))
+by_time_virus$label_plot = gsub("_2", " et al. 2", by_time_virus$label_plot)
+by_time_virus$label_plot = gsub("_", "-", by_time_virus$label_plot)
+
+ggplot(subset(by_time_virus, is.element(label, c("Li_2010", "Torres_Velez_2008", "Geisbert_2019")) & is.element(tissue_group, c("Respiratory\ntract", "Digestive\nsystem", "Lymphatic\nsystem", "Nervous\nsystem", "Urinay\ntract"))))+
+  geom_point(aes(x=time_post_infection, y = syncytium_p, color = "Syncytia"), size = 2)+
+  geom_line(aes(x=time_post_infection, y = syncytium_p, color = "Syncytia"))+
+  geom_point(aes(x=time_post_infection, y = IHC_p, color = "Viral antigens (IHC)"), size = 1)+
+  geom_line(aes(x=time_post_infection, y = IHC_p, color = "Viral antigens (IHC)"))+
+  scale_color_manual(values = c(col_pos, col_pos_3)) +
+  facet_grid(label_plot~tissue_group) +
+  xlab("Day post-infection") +
+  ylab("Prevalence")+
+  scale_x_continuous(breaks = seq(1, 20, 7), limits = c(1, 21)) +
+  scale_y_continuous(breaks = seq(0, 1, 0.5)) +
+  ggtheme_balloon+theme(strip.text.y = element_text(angle = 0)) +
+  theme(legend.position = "bottom", legend.title = element_blank())
+
+ggsave(paste0("export/syncytium_", "vs_IHC_selected",  ".pdf"),
+       width = 14, height = 8, units = "cm", dpi = 600)
+
+```
+
+# Counts
+
+```{r counts}
+
+# Studies reporting syncytium data
+length(unique(syncytium$doi))
+length(unique(data[!is.na(data$syncytium_prop_raw), "doi"]))
+
+setdiff(unique(data[!is.na(data$syncytium_prop_raw), "doi"]), unique(syncytium$doi)) # differences on studies for which infection was not succesful 
+
+# Studies including proportions of individuals with syncytia
+length(unique(subset(syncytium, !is.na(syncytium_screen))$label))
+
+# Studies including information of collection time
+length(unique(subset(syncytium, !is.na(time_post_infection_approximate))$label))
+
+# Studies including information on tissue
+length(unique(subset(syncytium, tissue_group != "organ_mix")$label))
+
+# Studies respecting these 3 criteria
+length(unique(subset(syncytium, !is.na(syncytium_screen) & !is.na(time_post_infection_approximate) & tissue_group != "organ_mix")$label))
+
+# Species respecting the 3 criteria
+unique(subset(syncytium, !is.na(syncytium_screen) & !is.na(time_post_infection_approximate) & tissue_group != "organ_mix")$species)
+
+# Species respecting the 3 criteria
+unique(subset(syncytium, !is.na(syncytium_screen) & !is.na(time_post_infection_approximate) & tissue_group != "organ_mix")$virus_strain)
+
+```
+
+```{r}
+
+#####
+# Counts
+
+# Number of data points (including repeated measures on individuals via swabs for instance)
+sum(data$group_size, na.rm = T)
+sum(data$infection_screened)
+sum(data$infection_screened * data$group_size, na.rm = T)
+
+length(unique(data$label))
+length(unique(data$species))
+unique(data$species)
+sum(data[!duplicated(data$study_group), "group_size"], na.rm = T)
+
+length(unique(syncytium$label))
+length(unique(syncytium$species))
+unique(syncytium$species)
+sum(syncytium[!duplicated(syncytium$study_group), "group_size"], na.rm = T)
+
+unique(data$species)
+unique(syncytium$species)
+
+max(syncytium$time_post_infection, na.rm = T)
+min(syncytium$time_post_infection, na.rm = T)
+
+```
